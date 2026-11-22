@@ -1,0 +1,17 @@
+# Keep local data, secrets and caches out of the image
+.env
+.env.*
+!.env.example
+*.db
+uploads/
+chroma_db/
+models/
+.e2e-run/
+tests/
+htmlcov/
+.coverage
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+**/__pycache__/
+*.pyc

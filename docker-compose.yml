@@ -1,0 +1,82 @@
+# IntelliDoc AI: the whole stack in containers.
+#
+#   1. copy .env.docker.example to .env and set POSTGRES_PASSWORD and SECRET_KEY
+#   2. docker compose up -d --build
+#   3. open http://localhost:8080  (first start downloads the Ollama model, ~2 GB)
+#
+# Services: postgres (database), ollama (+ one-off model download), backend (FastAPI),
+# frontend (nginx serving the React app and forwarding /api to the backend).
+# Only the frontend port is published; everything else stays on the private network.
+name: intellidoc
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: intellidoc
+      POSTGRES_DB: intellidoc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intellidoc -d intellidoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.40.16
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # Downloads the model into the ollama volume once, then exits (quick if already present).
+  ollama-pull:
+    image: ollama/ollama:0.40.16
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'for i in $$(seq 1 30); do ollama list >/dev/null 2>&1 && break; sleep 2; done; ollama pull "$$MODEL"'
+    restart: "no"
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://intellidoc:${POSTGRES_PASSWORD}@postgres:5432/intellidoc
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads:/data/uploads
+      - chroma:/data/chroma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Deliberately not dependent on ollama: without it the app still runs, /health/ready
+    # reports "AI model offline", and LLM_PROVIDER=extractive needs no LLM at all.
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${PUBLIC_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama:
+  uploads:
+  chroma:

@@ -1,0 +1,42 @@
+# ---- Web framework ----
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# ---- Configuration ----
+pydantic==2.14.4  # was 2.10.4; the Phase 3 chromadb install upgraded it and all tests pass on it
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# ---- Testing ----
+pytest==8.3.4
+httpx==0.28.1
+
+# ---- Phase 2: database ----
+SQLAlchemy==2.0.36
+
+# ---- Phase 2: file upload & text extraction ----
+python-multipart==0.0.20
+pypdf==5.1.0
+python-docx==1.1.2
+
+# ---- Phase 2: PDF text extraction (page-aware) ----
+PyMuPDF==1.25.1
+
+# ---- Phase 3: chunking, embeddings, vector database ----
+# sentence-transformers pulls in PyTorch (CPU build on Windows) and transformers.
+sentence-transformers==3.3.1
+chromadb==0.5.23
+numpy>=1.26
+# chromadb 0.5.x telemetry breaks with posthog 6+ (telemetry is disabled; this only avoids error logs)
+posthog>=2.4,<6
+
+# ---- Phase 4: hybrid retrieval + RAG ----
+# Cross-encoder reranker and the local LLM (transformers provider) reuse
+# sentence-transformers / transformers / torch from Phase 3.
+rank-bm25==0.2.2
+
+# Phase 6: PostgreSQL driver, login tokens, password hashing, email validation
+psycopg[binary]==3.2.13
+PyJWT==2.10.1
+pwdlib[argon2]==0.2.1
+email-validator==2.2.0

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+e2e/
+e2e-results/
+e2e-report/
+playwright.config.js
+src/test/
+.env
+.env.*

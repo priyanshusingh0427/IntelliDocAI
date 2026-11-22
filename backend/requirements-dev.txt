@@ -1,0 +1,5 @@
+# Test and quality tools (Phase 7). Install with:
+#   ..\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+-r requirements.txt
+pytest-cov==6.0.0
+ruff==0.8.4

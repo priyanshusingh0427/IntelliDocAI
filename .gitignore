@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+backend/uploads/
+uploads/
+*.db
+backend/models/
+backend/chroma_db/
+
+# Phase 5: frontend
+frontend/node_modules/
+frontend/dist/
+
+# Phase 7: test artifacts
+backend/.e2e-run/
+backend/.coverage
+backend/htmlcov/
+
+# Phase 8: tool caches
+.ruff_cache/
+**/.ruff_cache/
