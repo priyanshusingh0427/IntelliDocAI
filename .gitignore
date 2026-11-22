@@ -21,3 +21,11 @@ backend/htmlcov/
 # Phase 8: tool caches
 .ruff_cache/
 **/.ruff_cache/
+
+# Pre-publish hardening: any other env file, local databases and logs
+.env.*
+!.env.example
+!.env.docker.example
+*.sqlite
+*.sqlite3
+*.log

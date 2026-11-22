@@ -22,11 +22,12 @@ Upload documents, ask in plain English, and every answer cites the exact page it
 - **Page-aware PDF extraction** (PyMuPDF): text, page numbers and metadata. Corrupted, password-protected, fake and oversized files are rejected with clear messages.
 - **Hybrid retrieval**: semantic search (Sentence Transformers + ChromaDB) and keyword search (BM25), fused with Reciprocal Rank Fusion, then reranked by a cross-encoder.
 - **Grounded answers from a local LLM** (Ollama `llama3.2:3b`, or a built-in Hugging Face model, or no LLM at all) with `[n]` citations that are checked against the sources.
+- **Whole-document requests**: "Summarize this document", "main topics" or "key points" get excerpts spread from the first to the last page, instead of a similarity search that can't match them.
 - **No hallucination by design**: when no passage is relevant, the LLM is not even called. A low-confidence fallback only answers if the answer is visibly backed by the source text.
 - **Accounts** (Argon2 password hashing, JWT login). Every document, search, answer and chat is private to its owner.
 - **Chat history** stored in PostgreSQL: reopen, continue, rename or delete conversations.
 - **React + Tailwind UI**: drag-and-drop upload, clickable citations, loading and error states, a live health indicator ("AI model offline"), and a mobile layout.
-- **Tested end to end**: 124 backend tests (92% coverage) on SQLite and PostgreSQL, 42 frontend tests, and 8 real-browser tests. A single command runs everything.
+- **Tested end to end**: 149 backend tests (92% coverage) on SQLite and PostgreSQL, 42 frontend tests, and 8 real-browser tests. A single command runs everything.
 - **One-command deployment** with Docker Compose (PostgreSQL, Ollama, FastAPI, nginx), and CI that builds and smoke-tests the containers.
 
 ## How it works
@@ -129,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run-all-tests.ps1
 
 | Suite | What it covers | Count |
 |---|---|---|
-| Backend (pytest) | extraction, chunking, search, RAG, auth, privacy, chat history, readiness, failures, concurrency; runs on SQLite **and** PostgreSQL | 124 (+ 5 real-model tests with `-WithModels`) |
+| Backend (pytest) | extraction, chunking, search, RAG, auth, privacy, chat history, readiness, summaries, failures, concurrency; runs on SQLite **and** PostgreSQL | 149 (+ 6 real-model tests with `-WithModels`) |
 | Frontend (Vitest) | every component, login and session expiry, chat history, errors, upload states | 42 |
 | End to end (Playwright) | a real browser against the real backend and models: full journey, bad files, "not found", two-user privacy, auth, deletion, phone layout | 8 |
 | Deployment smoke test | runs against a live stack through nginx: headers, routing, upload, answer, limits (`backend/scripts/smoke_test.py`) | 16 checks |
@@ -164,7 +165,7 @@ backend/
     services/           extraction, chunking, embeddings, vector_store, keyword_search,
                         hybrid_search, reranker, llm, rag, storage, indexing
   scripts/              migrate SQLite -> PostgreSQL, smoke test, model download, e2e server
-  tests/                124 tests
+  tests/                149 tests
   Dockerfile
 frontend/
   src/components/       UploadZone, DocumentList, ChatPanel, AnswerMessage, ChatList, LoginScreen

@@ -116,6 +116,23 @@ def build_user_prompt(question: str, sources: list[Source]) -> str:
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
+_CITATIONS_AFTER_PUNCT = re.compile(r"([.!?])([ \t]*)((?:\[\d+(?:\s*[,;]\s*\d+)*\][ \t]*)+)")
+
+
+def place_citations_before_punctuation(answer: str) -> str:
+    """'...communications. [1][2]' -> '...communications [1][2].'
+
+    Models often put citations after the full stop. The sentence splitter then sees the
+    sentence as uncited, auto-attribution adds a duplicate ('[1]. [1][2]') and a misleading
+    "the model did not cite" warning."""
+    def move(m: re.Match) -> str:
+        cites = m.group(3)
+        trailing = cites[len(cites.rstrip()):]  # keep the space before the next sentence
+        return f" {cites.strip()}{m.group(1)}{trailing}"
+
+    return _CITATIONS_AFTER_PUNCT.sub(move, answer)
+
+
 def best_sentence_support(answer: str, sources: list[Source]) -> float:
     """Largest share of one answer sentence's (non-stopword) words found in a single source.
 
@@ -199,6 +216,88 @@ def _is_not_found(answer: str) -> bool:
     return "could not find the answer" in normalized or "couldn't find the answer" in normalized
 
 
+# ------------------------------------------------------------ whole-document (summary) requests
+
+# Words that only express "give me an overview"; anything else in the question is a topic.
+_SUMMARY_TRIGGERS = re.compile(
+    r"\b(summari[sz]e|summari[sz]ing|summary|summaries|overview|tl;?dr|gist|outline|recap|"
+    r"main (?:points?|topics?|ideas?|themes?)|key (?:points?|topics?|ideas?|takeaways?|concepts?)|"
+    r"topics? covered|what(?:'s| is) (?:this|the|it) (?:document |pdf |file |text |notes? )?about)\b",
+    re.IGNORECASE,
+)
+_SUMMARY_FILLER = frozenset(
+    "summarize summarise summarizing summarising summary summaries overview tldr tl dr gist outline "
+    "recap main key points point topics topic ideas idea themes theme takeaways takeaway concepts "
+    "concept covered cover covers document documents doc docs pdf pdfs file files text notes note "
+    "whole entire give tell list please brief briefly short quick simple simply words explain "
+    "describe provide write make about contents content".split()
+)
+
+
+def is_summary_request(question: str) -> bool:
+    """True for whole-document requests ("Summarize this document", "What is this PDF about?",
+    "main topics"). A request that also names a topic ("Summarize the AES section") is NOT
+    one: normal retrieval finds that topic and the LLM summarizes it."""
+    if not _SUMMARY_TRIGGERS.search(question):
+        return False
+    from app.services.keyword_search import tokenize
+
+    topic_words = [t for t in tokenize(question) if t not in _SUMMARY_FILLER and t != "s"]
+    return len(topic_words) == 0
+
+
+def _spread(items: list, count: int) -> list:
+    """`count` items evenly spaced from first to last (all of them if there are fewer)."""
+    if count >= len(items):
+        return list(items)
+    if count == 1:
+        return [items[0]]
+    step = (len(items) - 1) / (count - 1)
+    return [items[round(i * step)] for i in range(count)]
+
+
+def summary_sources(store: VectorStore, settings: Settings, document_ids: list[int] | None) -> list[Source]:
+    """Excerpts spread evenly across each document (start, middle, end), in reading order.
+    With several documents the slots are shared so each one is represented."""
+    if document_ids:
+        per_doc = {d: store.get_document_chunks(d) for d in document_ids}
+    else:
+        per_doc = {}
+        for h in sorted(store.get_all_chunks(), key=lambda h: (h.document_id, h.chunk_index)):
+            per_doc.setdefault(h.document_id, []).append(h)
+    per_doc = {d: chunks for d, chunks in per_doc.items() if chunks}
+    if not per_doc:
+        return []
+
+    slots = max(settings.RAG_SUMMARY_CHUNKS, len(per_doc))
+    base, extra = divmod(slots, len(per_doc))
+    picked: list = []
+    for i, (_, chunks) in enumerate(sorted(per_doc.items())):
+        picked.extend(_spread(chunks, base + (1 if i < extra else 0)))
+
+    per_source = max(200, settings.RAG_SUMMARY_MAX_CONTEXT_CHARS // len(picked))
+    return [
+        Source(number=n, hit=HybridHit(hit=h), text=h.text[:per_source])
+        for n, h in enumerate(picked, start=1)
+    ]
+
+
+def build_summary_prompt(question: str, sources: list[Source]) -> str:
+    files = sorted({s.hit.hit.filename for s in sources})
+    blocks = [
+        f"[{s.number}] (file: {s.hit.hit.filename}, page {s.hit.hit.page_number})\n{s.text}"
+        for s in sources
+    ]
+    return (
+        f"Excerpts taken evenly from the start, middle and end of {', '.join(files)}:\n\n"
+        + "\n\n".join(blocks)
+        + "\n\nWrite a short summary of the main topics covered, using only these excerpts. "
+        "Cite the excerpt numbers like [1][4]."
+        + (" Summarize each file separately, naming it." if len(files) > 1 else "")
+        + f"\n\nRequest: {question}\nSummary with citations:"
+    )
+
+
 def _extractive_answer(sources: list[Source]) -> str:
     lines = ["Most relevant passages from your documents:"]
     for s in sources:
@@ -221,6 +320,9 @@ def answer_question(
     document_ids: list[int] | None = None,
 ) -> RagAnswer:
     question = question.strip()
+    if is_summary_request(question):
+        return _answer_summary(question, store=store, llm=llm, settings=settings,
+                               document_ids=document_ids, reranker_model=reranker.model_name)
     retrieval = hybrid_search(
         question,
         embedder=embedder,
@@ -259,6 +361,7 @@ def answer_question(
     if not raw:
         raw = NOT_FOUND_ANSWER
         warnings.append("The LLM returned an empty answer.")
+    raw = place_citations_before_punctuation(raw)
     if _is_not_found(raw):
         return RagAnswer(
             answer=NOT_FOUND_ANSWER, grounded=False, found=False, citations=[],
@@ -298,3 +401,57 @@ def answer_question(
         timings_ms=timings,
         **common,
     )
+
+
+def _answer_summary(
+    question: str,
+    *,
+    store: VectorStore,
+    llm: LLM,
+    settings: Settings,
+    document_ids: list[int] | None,
+    reranker_model: str,
+) -> RagAnswer:
+    t = time.perf_counter()
+    sources = summary_sources(store, settings, document_ids)
+    timings = {"summary_sampling": round((time.perf_counter() - t) * 1000, 1)}
+    common = dict(llm_model=llm.model_name, reranker_model=reranker_model)
+    if not sources:
+        return RagAnswer(answer=NOT_FOUND_ANSWER, grounded=False, found=False, citations=[],
+                         sources=[], timings_ms=timings, **common)
+
+    warnings: list[str] = []
+    files = sorted({s.hit.hit.filename for s in sources})
+    if len(files) > 1:
+        warnings.append(
+            f"This summary covers {len(files)} documents ({', '.join(files)}). "
+            "Tick one document in the list to summarize only that one."
+        )
+    if not llm.is_generative:
+        return RagAnswer(answer=_extractive_answer(sources), grounded=True, found=True, citations=sources,
+                         sources=sources, warnings=warnings, timings_ms=timings, **common)
+
+    t = time.perf_counter()
+    raw = place_citations_before_punctuation(
+        llm.generate(SYSTEM_PROMPT, build_summary_prompt(question, sources)).strip()
+    )
+    timings["llm"] = round((time.perf_counter() - t) * 1000, 1)
+    if not raw or _is_not_found(raw):
+        warnings.append("The model could not summarize these excerpts.")
+        return RagAnswer(answer=NOT_FOUND_ANSWER, grounded=False, found=False, citations=[],
+                         sources=sources, warnings=warnings, timings_ms=timings, **common)
+
+    valid, invalid = parse_citations(raw, len(sources))
+    if invalid:
+        warnings.append(f"Removed citations to non-existent sources: {invalid}")
+        raw = strip_invalid_citations(raw, len(sources))
+    raw, auto_added = attribute_citations(raw, sources)
+    if auto_added:
+        warnings.append(
+            f"{auto_added} citation(s) were added automatically by matching answer sentences "
+            "to the sources (the model did not cite them itself)."
+        )
+        valid, _ = parse_citations(raw, len(sources))
+    by_number = {s.number: s for s in sources}
+    return RagAnswer(answer=raw, grounded=bool(valid), found=True, citations=[by_number[n] for n in valid],
+                     sources=sources, warnings=warnings, timings_ms=timings, **common)

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     LOW_CONFIDENCE_MIN_SUPPORT: float = 0.6
     RAG_CONTEXT_CHUNKS: int = 5  # chunks given to the LLM as numbered sources
     RAG_MAX_CONTEXT_CHARS: int = 6000  # cap on total source text in the prompt
+    # Whole-document requests ("Summarize this document", "main topics") cannot be answered by
+    # similarity search (the question has no topic words), so they get excerpts spread evenly
+    # across the document(s) instead. ~8000 chars fits comfortably in OLLAMA_NUM_CTX=4096.
+    RAG_SUMMARY_CHUNKS: int = 8
+    RAG_SUMMARY_MAX_CONTEXT_CHARS: int = 8000
     # LLM: "transformers" (in-process HF model), "ollama" (local Ollama server),
     # or "extractive" (no LLM: returns the best passages with citations)
     LLM_PROVIDER: str = "transformers"

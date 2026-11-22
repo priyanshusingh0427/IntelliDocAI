@@ -120,6 +120,10 @@ Chunk IDs embed the document ID, so re-indexing replaces a document's vectors in
 | Post-processing | Remove citations to non-existent sources; add a citation to uncited sentences that mostly match one source (≥ 60% of words); flag answers with no citations |
 | Save | User and assistant messages, with citations, go into the chat (new chat titled by the question if no `chat_id` was given). Failed answers are not saved. |
 
+### Whole-document requests
+
+"Summarize this document", "What is this PDF about?", "main topics" and "key points" contain no topic words, so similarity search finds nothing relevant. Before this was handled, they were the main source of "not found" answers on a real 44-page document. Such requests are detected by trigger phrases plus a check that no other topic word remains, so "Summarize the AES section" still uses normal retrieval. They skip the reranker gate and get `RAG_SUMMARY_CHUNKS` (8) excerpts spread evenly from the first to the last chunk, shared across documents when several are in scope (with a note to tick one), within `RAG_SUMMARY_MAX_CONTEXT_CHARS` (8000). Models often place citations after the full stop ("... VPNs. [1]"); these are moved before it, so they aren't treated as uncited and duplicated.
+
 ### Retrieval thresholds
 
 The cross-encoder sometimes under-scores indirect wording. "Which filter cartridge should I buy?" scores −9.6 against the passage containing the filter part number. On the sample documents, off-topic questions scored between −11.3 and −11.0, so lowering the cutoff would leave almost no margin. Instead there's a two-check fallback, used only when nothing passes −6:

@@ -37,7 +37,7 @@ A full-stack retrieval-augmented generation (RAG) system:
 
 | | |
 |---|---|
-| Backend tests | 124 (92% coverage), run on SQLite **and** PostgreSQL |
+| Backend tests | 149 (92% coverage), run on SQLite **and** PostgreSQL |
 | Frontend tests | 42 (92% statements / 96% lines) |
 | Real-browser end-to-end tests | 8 (Playwright), also run with live Ollama answers |
 | Deployment smoke test | 16 checks through nginx |
@@ -49,7 +49,7 @@ A full-stack retrieval-augmented generation (RAG) system:
 - Built a full-stack RAG application (FastAPI, React, PostgreSQL, ChromaDB, Ollama) that answers questions about PDFs with verifiable page citations and runs fully on local hardware.
 - Designed hybrid retrieval (dense embeddings + BM25, Reciprocal Rank Fusion, cross-encoder reranking) with a measured relevance gate that blocks off-topic questions before LLM generation, cutting hallucinations on unanswerable questions.
 - Implemented JWT/Argon2 authentication with per-user data isolation enforced in queries, search scope and chat history, verified by multi-user browser tests.
-- Wrote 170+ automated tests across pytest, Vitest and Playwright (92% backend coverage); testing uncovered and fixed a traceback-leak vulnerability and a concurrency bug in vector-store initialisation.
+- Wrote 190+ automated tests across pytest, Vitest and Playwright (92% backend coverage); testing uncovered and fixed a traceback-leak vulnerability and a concurrency bug in vector-store initialisation.
 - Containerised the stack with Docker Compose and nginx (CSP, upload limits, SPA routing) and set up GitHub Actions to build images and smoke-test the running system on every push.
 
 ## Built in eight phases
